@@ -1,12 +1,15 @@
 """
 producer.py
-Sends inventory update messages to the 'inventory_queue' on RabbitMQ.
+Reads inventory update events from inventory_events.csv and sends each
+one as a message to the 'inventory_queue' on RabbitMQ.
 """
 
+import csv
 import json
 import pika
 
 QUEUE_NAME = "inventory_queue"
+EVENTS_FILE = "inventory_events.csv"
 
 
 def get_connection():
@@ -14,14 +17,8 @@ def get_connection():
     return pika.BlockingConnection(pika.ConnectionParameters(host="localhost"))
 
 
-def send_inventory_update(channel, sku: str, quantity_change: int, reason: str = "manual_update"):
-    """
-    Publish a single inventory update event to the queue.
-
-    sku: product identifier, e.g. "SKU-1001"
-    quantity_change: positive to add stock, negative to remove stock
-    reason: short tag describing why the change happened
-    """
+def send_inventory_update(channel, sku: str, quantity_change: int, reason: str):
+    """Publish a single inventory update event to the queue."""
     message = {
         "sku": sku,
         "quantity_change": quantity_change,
@@ -39,17 +36,35 @@ def send_inventory_update(channel, sku: str, quantity_change: int, reason: str =
     print(f"[sent] {message}")
 
 
+def load_events(filepath: str):
+    """Read inventory events from a CSV file and return them as a list of dicts."""
+    events = []
+    with open(filepath, newline="", encoding="utf-8") as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            events.append({
+                "sku": row["sku"],
+                "quantity_change": int(row["quantity_change"]),
+                "reason": row["reason"],
+            })
+    return events
+
+
 def main():
+    events = load_events(EVENTS_FILE)
+    print(f"Loaded {len(events)} events from {EVENTS_FILE}")
+
     connection = get_connection()
     channel = connection.channel()
-
-    # Make sure the queue exists (safe to call even if it already does)
     channel.queue_declare(queue=QUEUE_NAME, durable=True)
 
-    # Send a few sample inventory events
-    send_inventory_update(channel, sku="SKU-1001", quantity_change=-5, reason="order_fulfilled")
-    send_inventory_update(channel, sku="SKU-1002", quantity_change=100, reason="restock")
-    send_inventory_update(channel, sku="SKU-1001", quantity_change=-2, reason="order_fulfilled")
+    for event in events:
+        send_inventory_update(
+            channel,
+            sku=event["sku"],
+            quantity_change=event["quantity_change"],
+            reason=event["reason"],
+        )
 
     connection.close()
     print("Done sending messages.")

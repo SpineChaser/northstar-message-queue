@@ -1,0 +1,6 @@
+sku,quantity_change,reason
+SKU-1001,-5,order_fulfilled
+SKU-1002,100,restock
+SKU-1001,-2,order_fulfilled
+SKU-1003,50,restock
+SKU-1002,-10,order_fulfilled
